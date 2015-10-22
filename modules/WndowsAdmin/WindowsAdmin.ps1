@@ -1,0 +1,1 @@
+Get-ChildItem $PSScriptRoot\*.ps1 -Recurse | % {. $_.FullName }
