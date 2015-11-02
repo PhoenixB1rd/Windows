@@ -45,7 +45,7 @@
     Import-Csv C:\temp\listofservers.csv | Get-DiskTimeout | Export-csv C:\temp\results.csv -NoTypeInformation
 
     .NOTES
-    Author - Phoen1xB1rd
+    Author - PhoenixB1rd
 
 
     #>
@@ -62,7 +62,7 @@
         [switch]$LinkDownTime
     )
      $credSplat = @{}
-    if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
+    if ($Credential -ne $null)
     {
         $credSplat['Credential'] = $Credential
     }
