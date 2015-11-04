@@ -12,7 +12,7 @@
     .PARAMETER ServerName
     A single computer name or an array of server names.
 
-    .PARAMETER Credential
+    .PARAMETER PSCredential
     Specifies a user account that has permission to perform this action. The default is the current user. Type a
     user name, such as "User01", "Domain01\User01", or User@Contoso.com. Or, enter a PSCredential object, such as
     an object that is returned by the Get-Credential cmdlet. When you type a user name, you are prompted for a
@@ -26,7 +26,8 @@
 
     .PARAMETER MaxRequestHoldTime
     Specifies if the command will also retrieve the value for HKLM\System\CurrentControlSet\Control\Class\{iSCSI_driver_GUID}\Instance_ID\Parameters\MxRequestHoldTime
-    Registry key. 
+    Registry key. If this Switch is included, it will use an Invoke-Command for some querying. 
+    If WSMAn is blocked or disallowed through a firewall this parameter will not work.
 
 
     .PARAMETER LinkDownTime
@@ -37,12 +38,23 @@
 
 
     .EXAMPLE
-    View the disk timeout value for a single server.
-    Get-DiskTimeout -ServerName myserver.tlr.thomson.com
+    View the disk timeout value for a single server using a stored credential variable.
+    
+    $creds = Get-Credential
+    Get-DiskTimeout -ServerName myserver.tlr.thomson.com -PSCredential $creds
 
     .EXAMPLE
-    View the disk timeout value for an array of servers and export the data to a csv (which can then be opened using Excel).
-    Import-Csv C:\temp\listofservers.csv | Get-DiskTimeout | Export-csv C:\temp\results.csv -NoTypeInformation
+    View the disk timeout value for an array of servers, and adding the additional switches. Then piping the output
+    to export the data to a csv (which can then be opened using Excel).
+    
+    $Creds = Get-Credential
+    Import-Csv C:\temp\listofservers.csv | % {Get-DiskTimeout -Servername $_ -PSCredential $creds -ManageDisksonSystemBuses |
+    Export-csv C:\temp\results.csv -NoTypeInformation
+    
+    
+    .NOTES
+    This Script may not work if you have to cross a domain to get to the remote registry values. 
+    The credentials are for when I use an invoke command to get specific information from the registry.
 
     .NOTES
     Author - PhoenixB1rd
@@ -53,131 +65,156 @@
     [CmdletBinding()] param
     (
         [Parameter(ValueFromPipeline=$True)][string[]]$ServerName,
-        [ValidateNotNull()]
-        [System.Management.Automation.PSCredential]
-        [System.Management.Automation.Credential()]
-        $Credential = [System.Management.Automation.PSCredential]::Empty,
+        [PsCredential]$PSCredential,
         [switch]$ManageDisksonSystemBuses,
         [switch]$MaxRequestHoldTime,
         [switch]$LinkDownTime
     )
      $credSplat = @{}
-    if ($Credential -ne $null)
+    if ($PSCredential -ne $null)
     {
-        $credSplat['Credential'] = $Credential
+        $credSplat.add('Credential', $PSCredential)
     }
       
-     foreach($server in $ServerName)
+     foreach($Server in $ServerName)
    
      {
-         $array = @()
-         $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', "$Server".Guest.Hostname)
-         $TimeoutValue = $reg.OpenSubKey("System\CurrentControlSet\Services\disk\").GetValue("TimeoutValue")
+          $Session3 = New-PSSession -ComputerName $Server  @credsplat
+          $TimeoutValue = Invoke-Command -Session $Session3 -ScriptBlock { $reg = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Services\disk\" ; $reg.getValue("TimeoutValue") }
+          Remove-PSSession -Session $Session3            
 
         Switch ($PSBoundParameters.Keys)
         {
-            'ManageDisksonSystemBuses' { $SystemBuses = $reg.OpenSubKey("System\CurrentControlSet\Services\ClusDisk\Parameters\").GetValue("ManageDiskOnSystemBuses") }
+            'ManageDisksonSystemBuses'
+                    { 
+                        $Session = New-PSSession -ComputerName $Server  @credsplat
+                        $names = Invoke-Command -Session $Session -ScriptBlock { $reg0 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\services\" ; $reg0.getsubkeynames() }
+                        if($names -contains "ClusDisk")
+                        {
+                            $Manage = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\services\clusDisk\Parameters\" }
+                            $SystemBuses = $Manage.ManageDisksOnSystemBuses
+                        }
+                        else
+                        {
+                            $SystemBuses = "ManageDiskOnSystemBuses value was not found in the registry."
+                        }
+                     Remove-PSSession $Session
+                    }
         
             'MaxRequestHoldTime'
-                                                                                                                                                                                {
-                    $array1 = @()
-                    foreach($server in $ServerName)
-                    {
-                        $Session = New-PSSession -ComputerName $Server -Credential @credSplat    #For the invoke commands later
-                        $keynames = $reg.OpenSubKey("System\CurrentControlSet\Services\Class\").GetSubKeyNames()
+                   {                                                                                                                                                             
+                        $array1 = @()
+                        foreach($server in $ServerName)
+                        {
+                            $MaxRequest = $null
+                            $Session1 = New-PSSession -ComputerName $Server @credSplat    #For the invoke commands later
+                            $keynames = Invoke-Command -Session $Session1 -ScriptBlock { $reg1 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg1.getsubkeynames() }
        
-                        foreach($key in $keynames)
-                        {
-                            #finding if there is a SCSI adapter driver entry in the registry, if there is it will be added to the first array. This likely will not work if WSMAN is not allowed through firewalls.
-                            $Property = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key" }
-                            if ($Property.Class -match "SCSI")
+                            foreach($key in $keynames)
                             {
-                                $array1 += $key       #I used the array just in case there was more than one SCSI adapter entry in the registy
-                            }
-   
-                        }
-                        if($array1 -ne $null)
-                        {
-                            foreach($SCSIkey in $array1)
-                            { 
-                                $Instances = $reg.OpenSubKey("System\CurrentControlSet\Services\Class\$SCSIkey").GetSubKeyNames() 
-                                if($Instances -ne $null) 
+                                #finding if there is a SCSI adapter driver entry in the registry, if there is it will be added to the first array. This likely will not work if WSMAN is not allowed through firewalls.
+                                $Property = Invoke-Command -Session $Session1 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key" }
+                                if ($Property.Class -match "SCSI")
                                 {
-                                    $Instances.Remove("Properties")
-                                    foreach($ID in $Instances)
-                                    {
-                                        if($reg.OpenSubKey("System\CurrentControlSet\Services\Class\$SCSIkey\$ID\Parameters\"))
-                                        {
-                                           $MaxRequest = $reg.OpenSubKey("System\CurrentControlSet\Services\Class\$SCSIkey\$ID\Parameters\").GetValue("MaxRequestHoldTime")
-                                        }
-                                    }       
+                                    $array1 += $key       #I used the array just in case there was more than one SCSI adapter entry in the registy
                                 }
+   
                             }
-
-                        }
-                         else
-                        {
-                            $MaxRequest = "No SCSI driver found"
-                        }
-                    }
-
+                            if($array1 -ne $null)
+                            {
+                                $Instances1 = @()
+                                foreach($SCSIkey in $array1)
+                                { 
+                                    $Instances1 = Invoke-Command -Session $Session1 -ScriptBlock { $reg2 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey" ; $reg2.Getsubkeynames() }
+                                    if($Instances1 -ne $null) 
+                                    {
+                                        $Collection1 = $null
+                                        $Collection1 = {$Instances1}.Invoke()
+                                        $Collection1.Remove("Properties")
+                                        foreach($ID in $Collection1)
+                                        {
+                                            $Statement = Invoke-Command -Session $Session1 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey\$using:ID\Parameters" }
+                                            if($Statement -ne $null)
+                                            {
+                                               $MaxRequest += $Statement.MaxRequestHoldTime
+                                            }
+                                            
+                                        }       
+                                    }
+                                }
+                           
+                            }
+                             else
+                            {
+                                $MaxRequest = "No SCSI driver found"
+                            }
+                          Remove-PSSession  -Session $Session1
+                        } 
                   }
 
             'LinkDownTime'   
-                                                                                                                                                                            {
-                    $array2 = @()
-                    foreach($server in $ServerName)
-                    {
-                        $Session = New-PSSession -ComputerName $Server -Credential @credsplat
-                        $keynames = $reg.OpenSubKey("System\CurrentControlSet\Services\Class\").GetSubKeyNames()
+                  {                                                                                                                                                             
+                        $array2 = @()
+                        foreach($server in $ServerName)
+                        {
+                            $LinkDown = $null
+                            $Session2 = New-PSSession -ComputerName $Server @credSplat    #For the invoke commands later
+                            $keynames2 = Invoke-Command -Session $Session2 -ScriptBlock { $reg3 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg3.getsubkeynames() }
        
-                        foreach($key in $keynames)
-                        {
-                            $Property = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key" }
-                            if ($Property.Class -match "SCSI")
+                            foreach($key2 in $keynames2)
                             {
-                                $array2 += $key
-                            }
-   
-                        }
-                        if($array2 -ne $null)
-                        {
-                            foreach($SCSIkey in $array2)
-                            { 
-                                $Instances = $reg.OpenSubKey("System\CurrentControlSet\Services\Class\$SCSIkey").GetSubKeyNames() 
-                                if($Instances -ne $null) 
+                                #finding if there is a SCSI adapter driver entry in the registry, if there is it will be added to the first array. This likely will not work if WSMAN is not allowed through firewalls.
+                                $Property2 = Invoke-Command -Session $Session2 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key2" }
+                                if ($Property2.Class -match "SCSI")
                                 {
-                                    $Instances.Remove("Properties")
-                                    foreach($ID in $Instances)
-                                    {
-                                        if($reg.OpenSubKey("System\CurrentControlSet\Services\Class\$SCSIkey\$ID\Parameters\"))
-                                        {
-                                           $LinkDown = $reg.OpenSubKey("System\CurrentControlSet\Services\Class\$SCSIkey\$ID\Parameters\").GetValue("LinkDownTime")
-                                        }
-                                    $MxRequestHoldTime = Invoke-Command -Session $Session -ScriptBlock{ "$Using:reg".OpenSubKey("$Using:SCSIkey\$using:ID\Parameters").GetValue("MaxRequestHoldTime") }
-                                    }       
+                                    $array2 += $key2       #I used the array just in case there was more than one SCSI adapter entry in the registy
                                 }
+   
                             }
-
-                        }
-                         else
-                        {
-                            $LinkDownTime = "No SCSI driver found"
-                        }
-                    }
-
-       }
+                            if($array2 -ne $null)
+                            {
+                                $Instances2 = @()
+                                foreach($SCSIkey2 in $array2)
+                                { 
+                                    $Instances2 = Invoke-Command -Session $Session2 -ScriptBlock { $reg4 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2" ; $reg4.Getsubkeynames() }
+                                    if($Instances2 -ne $null) 
+                                    {
+                                        $Collection2 = $null
+                                        $Collection2 = {$Instances2}.Invoke()
+                                        $Collection2.Remove("Properties")
+                                        foreach($ID2 in $Collection2)
+                                        {
+                                            $Statement2 = Invoke-Command -Session $Session2 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2\$using:ID2\Parameters" }
+                                            if($Statement2 -ne $null)
+                                            {
+                                              
+                                               $LinkDown += ($Statement2.LinkDownTime)
+                                            }
+                                            
+                                        }       
+                                    }
+                                }
+                           
+                            }
+                             else
+                            {
+                                $LinkDown = "No SCSI driver found"
+                            }
+                          Remove-PSSession  -Session $Session2
+                        } 
+                  }
         }
-    
-        $array += $Object = New-Object psobject -Property @{
+    #This creates the a new object that is outputed to screen by default by can be exported into a csv file if after the function you type | export-csv <destination> -NoTypeInformation
+         [psobject]@{
             ServerName = $Server
             TimeoutValue = $TimeoutValue
             ManageDiskOnSystemBuses = $SystemBuses
             MaxRequestHoldTime = $MaxRequest
-            LinkDownTime = $LinkDownTime
+            LinkDownTime = $LinkDown
             }
-    
+       
     }   
-    Return $array
+  
+    
 }
 
