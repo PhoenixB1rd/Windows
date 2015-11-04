@@ -64,12 +64,13 @@
 
     [CmdletBinding()] param
     (
-        [Parameter(ValueFromPipeline=$True)][string[]]$ServerName,
-        [PsCredential]$PSCredential,
+        [Parameter(ValueFromPipeline=$True,Mandatory=$True)][string[]]$ServerName,
+        [Parameter(Mandatory=$True)][PsCredential]$PSCredential,
         [switch]$ManageDisksonSystemBuses,
         [switch]$MaxRequestHoldTime,
         [switch]$LinkDownTime
     )
+     $Array = @()
      $credSplat = @{}
     if ($PSCredential -ne $null)
     {
@@ -129,8 +130,8 @@
                                     if($Instances1 -ne $null) 
                                     {
                                         $Collection1 = $null
-                                        $Collection1 = {$Instances1}.Invoke()
-                                        $Collection1.Remove("Properties")
+                                        $Collection1 = {$Instances1}.Invoke() 
+                                        $Collection1.Remove("Properties") | Out-Null
                                         foreach($ID in $Collection1)
                                         {
                                             $Statement = Invoke-Command -Session $Session1 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey\$using:ID\Parameters" }
@@ -180,8 +181,8 @@
                                     if($Instances2 -ne $null) 
                                     {
                                         $Collection2 = $null
-                                        $Collection2 = {$Instances2}.Invoke()
-                                        $Collection2.Remove("Properties")
+                                        $Collection2 = {$Instances2}.Invoke() 
+                                        $Collection2.Remove("Properties") | Out-Null
                                         foreach($ID2 in $Collection2)
                                         {
                                             $Statement2 = Invoke-Command -Session $Session2 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2\$using:ID2\Parameters" }
@@ -205,16 +206,16 @@
                   }
         }
     #This creates the a new object that is outputed to screen by default by can be exported into a csv file if after the function you type | export-csv <destination> -NoTypeInformation
-         [psobject]@{
+        $object = [psobject]@{
             ServerName = $Server
             TimeoutValue = $TimeoutValue
             ManageDiskOnSystemBuses = $SystemBuses
             MaxRequestHoldTime = $MaxRequest
             LinkDownTime = $LinkDown
             }
-       
+       $Array += $object
     }   
   
-    
+  return $Array  
 }
 
