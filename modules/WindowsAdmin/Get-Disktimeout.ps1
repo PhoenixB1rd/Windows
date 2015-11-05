@@ -64,12 +64,18 @@
 
     [CmdletBinding()] param
     (
-        [Parameter(ValueFromPipeline=$True,Mandatory=$True)][string[]]$ServerName,
+        [Parameter(ValueFromPipeline=$True,Mandatory=$True)]
+        [string[]]$ServerName,
         [PsCredential]$PSCredential,
         [switch]$ManageDisksonSystemBuses,
         [switch]$MaxRequestHoldTime,
         [switch]$LinkDownTime
     )
+
+    function Get-DiskRegKey {
+        
+    }
+
      $Array = @()
      $credSplat = @{}
     if ($PSCredential -ne $null)
@@ -78,8 +84,10 @@
     }
       
      foreach($Server in $ServerName)
-   
+ 
      {
+          $MaxRequest = @()
+          $LinkDown = @()
           $Session = New-PSSession -ComputerName $Server  @credsplat
           $TimeoutValue = Invoke-Command -Session $Session -ScriptBlock { $reg = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Services\disk\" ; $reg.getValue("TimeoutValue") }
                    
@@ -102,9 +110,7 @@
         
             'MaxRequestHoldTime'
                    {                                                                                                                                                             
-                        $array1 = @()
-                        foreach($server in $ServerName)
-                        {
+                            $array1 = @()
                             $MaxRequest = $null
                             $keynames = Invoke-Command -Session $Session -ScriptBlock { $reg1 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg1.getsubkeynames() }
        
@@ -146,14 +152,11 @@
                             {
                                 $MaxRequest = "No SCSI driver found"
                             }
-                        } 
                   }
 
             'LinkDownTime'   
                   {                                                                                                                                                             
-                        $array2 = @()
-                        foreach($server in $ServerName)
-                        {
+                            $array2 = @()
                             $LinkDown = $null
                             $keynames2 = Invoke-Command -Session $Session -ScriptBlock { $reg3 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg3.getsubkeynames() }
        
@@ -196,7 +199,6 @@
                             {
                                 $LinkDown = "No SCSI driver found"
                             }
-                        } 
                   }
         }
     #This creates the a new object that is outputed to screen by default by can be exported into a csv file if after the function you type | export-csv <destination> -NoTypeInformation
