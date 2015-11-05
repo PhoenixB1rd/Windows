@@ -65,7 +65,7 @@
     [CmdletBinding()] param
     (
         [Parameter(ValueFromPipeline=$True,Mandatory=$True)][string[]]$ServerName,
-        [Parameter(Mandatory=$True)][PsCredential]$PSCredential,
+        [PsCredential]$PSCredential,
         [switch]$ManageDisksonSystemBuses,
         [switch]$MaxRequestHoldTime,
         [switch]$LinkDownTime
@@ -80,15 +80,14 @@
      foreach($Server in $ServerName)
    
      {
-          $Session3 = New-PSSession -ComputerName $Server  @credsplat
-          $TimeoutValue = Invoke-Command -Session $Session3 -ScriptBlock { $reg = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Services\disk\" ; $reg.getValue("TimeoutValue") }
-          Remove-PSSession -Session $Session3            
+          $Session = New-PSSession -ComputerName $Server  @credsplat
+          $TimeoutValue = Invoke-Command -Session $Session -ScriptBlock { $reg = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Services\disk\" ; $reg.getValue("TimeoutValue") }
+                   
 
         Switch ($PSBoundParameters.Keys)
         {
             'ManageDisksonSystemBuses'
                     { 
-                        $Session = New-PSSession -ComputerName $Server  @credsplat
                         $names = Invoke-Command -Session $Session -ScriptBlock { $reg0 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\services\" ; $reg0.getsubkeynames() }
                         if($names -contains "ClusDisk")
                         {
@@ -99,7 +98,6 @@
                         {
                             $SystemBuses = "ManageDiskOnSystemBuses value was not found in the registry."
                         }
-                     Remove-PSSession $Session
                     }
         
             'MaxRequestHoldTime'
@@ -108,13 +106,12 @@
                         foreach($server in $ServerName)
                         {
                             $MaxRequest = $null
-                            $Session1 = New-PSSession -ComputerName $Server @credSplat    #For the invoke commands later
-                            $keynames = Invoke-Command -Session $Session1 -ScriptBlock { $reg1 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg1.getsubkeynames() }
+                            $keynames = Invoke-Command -Session $Session -ScriptBlock { $reg1 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg1.getsubkeynames() }
        
                             foreach($key in $keynames)
                             {
                                 #finding if there is a SCSI adapter driver entry in the registry, if there is it will be added to the first array. This likely will not work if WSMAN is not allowed through firewalls.
-                                $Property = Invoke-Command -Session $Session1 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key" }
+                                $Property = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key" }
                                 if ($Property.Class -match "SCSI")
                                 {
                                     $array1 += $key       #I used the array just in case there was more than one SCSI adapter entry in the registy
@@ -126,7 +123,7 @@
                                 $Instances1 = @()
                                 foreach($SCSIkey in $array1)
                                 { 
-                                    $Instances1 = Invoke-Command -Session $Session1 -ScriptBlock { $reg2 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey" ; $reg2.Getsubkeynames() }
+                                    $Instances1 = Invoke-Command -Session $Session -ScriptBlock { $reg2 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey" ; $reg2.Getsubkeynames() }
                                     if($Instances1 -ne $null) 
                                     {
                                         $Collection1 = $null
@@ -134,7 +131,7 @@
                                         $Collection1.Remove("Properties") | Out-Null
                                         foreach($ID in $Collection1)
                                         {
-                                            $Statement = Invoke-Command -Session $Session1 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey\$using:ID\Parameters" }
+                                            $Statement = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey\$using:ID\Parameters" }
                                             if($Statement -ne $null)
                                             {
                                                $MaxRequest += $Statement.MaxRequestHoldTime
@@ -149,7 +146,6 @@
                             {
                                 $MaxRequest = "No SCSI driver found"
                             }
-                          Remove-PSSession  -Session $Session1
                         } 
                   }
 
@@ -159,13 +155,12 @@
                         foreach($server in $ServerName)
                         {
                             $LinkDown = $null
-                            $Session2 = New-PSSession -ComputerName $Server @credSplat    #For the invoke commands later
-                            $keynames2 = Invoke-Command -Session $Session2 -ScriptBlock { $reg3 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg3.getsubkeynames() }
+                            $keynames2 = Invoke-Command -Session $Session -ScriptBlock { $reg3 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg3.getsubkeynames() }
        
                             foreach($key2 in $keynames2)
                             {
                                 #finding if there is a SCSI adapter driver entry in the registry, if there is it will be added to the first array. This likely will not work if WSMAN is not allowed through firewalls.
-                                $Property2 = Invoke-Command -Session $Session2 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key2" }
+                                $Property2 = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:key2" }
                                 if ($Property2.Class -match "SCSI")
                                 {
                                     $array2 += $key2       #I used the array just in case there was more than one SCSI adapter entry in the registy
@@ -177,7 +172,7 @@
                                 $Instances2 = @()
                                 foreach($SCSIkey2 in $array2)
                                 { 
-                                    $Instances2 = Invoke-Command -Session $Session2 -ScriptBlock { $reg4 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2" ; $reg4.Getsubkeynames() }
+                                    $Instances2 = Invoke-Command -Session $Session -ScriptBlock { $reg4 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2" ; $reg4.Getsubkeynames() }
                                     if($Instances2 -ne $null) 
                                     {
                                         $Collection2 = $null
@@ -185,7 +180,7 @@
                                         $Collection2.Remove("Properties") | Out-Null
                                         foreach($ID2 in $Collection2)
                                         {
-                                            $Statement2 = Invoke-Command -Session $Session2 -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2\$using:ID2\Parameters" }
+                                            $Statement2 = Invoke-Command -Session $Session -ScriptBlock { Get-ItemProperty -Path "Registry::HKLM\System\CurrentControlSet\Control\Class\$using:ScsiKey2\$using:ID2\Parameters" }
                                             if($Statement2 -ne $null)
                                             {
                                               
@@ -201,7 +196,6 @@
                             {
                                 $LinkDown = "No SCSI driver found"
                             }
-                          Remove-PSSession  -Session $Session2
                         } 
                   }
         }
@@ -213,7 +207,7 @@
             MaxRequestHoldTime = $MaxRequest
             LinkDownTime = $LinkDown
             }
-       
+       Remove-PSSession -Session $Session
     }   
   
  
