@@ -62,7 +62,8 @@
 
     #>
 
-    [CmdletBinding()] param
+    [CmdletBinding()] 
+    param
     (
         [Parameter(ValueFromPipeline=$True,Mandatory=$True)]
         [string[]]$ServerName,
@@ -83,19 +84,26 @@
         $credSplat.add('Credential', $PSCredential)
     }
       
+     $ServerTotal = ($ServerName | measure).count
+     $ServerCount = 1
      foreach($Server in $ServerName)
  
      {
           $MaxRequest = @()
           $LinkDown = @()
+          Write-Verbose "Server $Server | $ServerCount / $ServerTotal"
+          $ServerCount += 1
+          Write-Verbose "Creating new PSSession..."
           $Session = New-PSSession -ComputerName $Server  @credsplat
+          Write-Verbose "Querying TimeOutValue..."
           $TimeoutValue = Invoke-Command -Session $Session -ScriptBlock { $reg = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\Services\disk\" ; $reg.getValue("TimeoutValue") }
-                   
+          Write-Verbose "Query Complete."        
 
         Switch ($PSBoundParameters.Keys)
         {
             'ManageDisksonSystemBuses'
                     { 
+                        Write-Verbose "Querying ManageDisksonSystemBuses..."
                         $names = Invoke-Command -Session $Session -ScriptBlock { $reg0 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\services\" ; $reg0.getsubkeynames() }
                         if($names -contains "ClusDisk")
                         {
@@ -106,10 +114,12 @@
                         {
                             $SystemBuses = "ManageDiskOnSystemBuses value was not found in the registry."
                         }
+                        Write-Verbose "Query complete."
                     }
         
             'MaxRequestHoldTime'
-                   {                                                                                                                                                             
+                   {                     
+                            Write-Verbose "Querying MaxRequestHoldTime..."                                                                                                                                        
                             $array1 = @()
                             $MaxRequest = $null
                             $keynames = Invoke-Command -Session $Session -ScriptBlock { $reg1 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg1.getsubkeynames() }
@@ -152,10 +162,12 @@
                             {
                                 $MaxRequest = "No SCSI driver found"
                             }
+                            Write-Verbose "Query complete."
                   }
 
             'LinkDownTime'   
-                  {                                                                                                                                                             
+                  {                                                      
+                            Write-Verbose "Querying LinkDownTime..."                                                                                                       
                             $array2 = @()
                             $LinkDown = $null
                             $keynames2 = Invoke-Command -Session $Session -ScriptBlock { $reg3 = Get-Item -Path "Registry::HKLM\System\CurrentControlSet\control\class\" ; $reg3.getsubkeynames() }
@@ -199,6 +211,7 @@
                             {
                                 $LinkDown = "No SCSI driver found"
                             }
+                            Write-Verbose "Query completed."
                   }
         }
     #This creates the a new object that is outputed to screen by default by can be exported into a csv file if after the function you type | export-csv <destination> -NoTypeInformation
