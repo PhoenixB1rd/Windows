@@ -206,16 +206,16 @@
                   }
         }
     #This creates the a new object that is outputed to screen by default by can be exported into a csv file if after the function you type | export-csv <destination> -NoTypeInformation
-        $object = [psobject]@{
+            [pscustomobject]@{
             ServerName = $Server
             TimeoutValue = $TimeoutValue
             ManageDiskOnSystemBuses = $SystemBuses
             MaxRequestHoldTime = $MaxRequest
             LinkDownTime = $LinkDown
             }
-       $Array += $object
+       
     }   
   
-  return $Array  
+ 
 }
 
