@@ -14,8 +14,8 @@
     .PARAMETER ServerName
     A single server name or an array of server names.
 
-    .PARAMETER Option
-    Specifies the CimSession Protocol option to use.
+    .PARAMETER Protocol
+    Specifies the CimSession Protocol option to use. Valid entries are wSMAN and DCOM.
 
     .PARAMETER ClassName
     Specifies which WMI or CMI class to query on the server(s).
@@ -32,13 +32,16 @@
     #>
     [CmdletBinding()] param(
         $PSCredential,
-        [Parameter(ValueFromPipeline=$True)][string]$ServerName,
-        $Options,
+        [Parameter(ValueFromPipeline=$True)]
+        [string]$ServerName,
+        [ValidateSet('WSMan','Dcom')]
+        $Protocol = 'WSMAN',
         $ClassName
     )
 
+
    
-    $Option = New-CimSessionOption -Protocol DCOM
+    $Option = New-CimSessionOption -Protocol $Protocol
       foreach ($Computer in $ServerName) {
         try {
           if ($Credential) {
